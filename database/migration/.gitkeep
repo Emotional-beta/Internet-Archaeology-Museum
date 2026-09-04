@@ -1,0 +1,6 @@
+-- Migration scripts will be placed in this directory.
+-- 迁移脚本将放置在此目录。
+--
+-- Naming convention / 命名规范:
+--   V{version}__{description}.sql
+--   e.g. V001__create_artifact_table.sql

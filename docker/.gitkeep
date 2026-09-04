@@ -1,0 +1,9 @@
+# docker/
+
+Docker configuration files will be placed here.
+
+Docker 配置文件将放置在此目录。
+
+Includes `docker-compose.yml` for local development.
+
+包含用于本地开发的 `docker-compose.yml`。

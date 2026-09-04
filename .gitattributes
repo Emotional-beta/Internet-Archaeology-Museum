@@ -1,0 +1,31 @@
+# Normalize line endings
+* text=auto eol=lf
+
+# Source code
+*.java text
+*.ts text
+*.js text
+*.vue text
+*.css text
+*.scss text
+*.html text
+*.json text
+*.xml text
+*.yml text
+*.yaml text
+*.sql text
+
+# Documentation
+*.md text
+
+# Images and binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+
+# Shell scripts
+*.sh text eol=lf
