@@ -140,14 +140,18 @@ FLUSH PRIVILEGES;
 
 ### 4.2 Run Schema / 运行建表脚本
 
+The `--default-character-set=utf8mb4` flag is required — without it the MySQL client may corrupt multibyte (Chinese) characters mid-statement and throw a syntax error.
+
+必须加 `--default-character-set=utf8mb4`，否则 MySQL 客户端在传输多字节中文字符时可能截断，导致 SQL 语法错误。
+
 ```bash
-mysql -u museum_user -p museum < database/schema.sql
+mysql --default-character-set=utf8mb4 -u museum_user -p museum < database/schema.sql
 ```
 
 ### 4.3 Run Seed Data / 运行种子数据
 
 ```bash
-mysql -u museum_user -p museum < database/seed.sql
+mysql --default-character-set=utf8mb4 -u museum_user -p museum < database/seed.sql
 ```
 
 ---
