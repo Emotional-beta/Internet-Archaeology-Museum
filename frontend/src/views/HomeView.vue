@@ -1,23 +1,44 @@
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, watch, onMounted, computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { listArtifacts, listCategories } from '@/api/artifact'
 import type { ArtifactListItem, Category } from '@/types/artifact'
 
+const route = useRoute()
 const router = useRouter()
+
+// --- valid sets for URL param validation ---
+const VALID_ERAS = new Set(['1990s', '2000s', '2010s', '2020s'])
+const VALID_STATUSES = new Set([1, 2])
+
+function parseUrlParams() {
+  const p = route.query
+  const rawStatus = Number(p.status)
+  const rawPage = parseInt(String(p.page ?? '1'), 10)
+  return {
+    q: typeof p.q === 'string' ? p.q : '',
+    era: typeof p.era === 'string' && VALID_ERAS.has(p.era) ? p.era : '',
+    category: typeof p.category === 'string' ? p.category : '',
+    status: VALID_STATUSES.has(rawStatus) ? rawStatus : undefined as number | undefined,
+    page: rawPage > 0 ? rawPage : 1,
+  }
+}
+
+const initial = parseUrlParams()
 
 const artifacts = ref<ArtifactListItem[]>([])
 const categories = ref<Category[]>([])
 const total = ref(0)
 const loading = ref(false)
-const error = ref('')
+const errorMsg = ref('')
 
 const query = reactive({
-  page: 1,
+  page: initial.page,
   pageSize: 18,
-  category: '',
-  era: '',
-  q: '',
+  q: initial.q,
+  era: initial.era,
+  category: initial.category,
+  status: initial.status as number | undefined,
 })
 
 const eras = [
@@ -27,22 +48,48 @@ const eras = [
   { label: '2020s', value: '2020s' },
 ]
 
+const statuses = [
+  { label: '全部 All', value: undefined as number | undefined },
+  { label: '活跃 Active', value: 1 },
+  { label: '幽灵 Ghost', value: 2 },
+]
+
+// --- URL sync ---
+// Single direction: state → URL. Never read back from URL after init.
+let _updatingUrl = false
+
+function syncToUrl() {
+  const q: Record<string, string> = {}
+  if (query.q)        q.q        = query.q
+  if (query.era)      q.era      = query.era
+  if (query.category) q.category = query.category
+  if (query.status != null) q.status = String(query.status)
+  if (query.page > 1) q.page = String(query.page)
+
+  _updatingUrl = true
+  router.replace({ query: q }).finally(() => { _updatingUrl = false })
+}
+
+// --- API ---
 async function loadArtifacts() {
   loading.value = true
-  error.value = ''
+  errorMsg.value = ''
   try {
-    const params = {
+    const params: Record<string, unknown> = {
       page: query.page,
       pageSize: query.pageSize,
-      ...(query.category && { category: query.category }),
-      ...(query.era && { era: query.era }),
-      ...(query.q && { q: query.q }),
     }
+    if (query.q)        params.q        = query.q
+    if (query.era)      params.era      = query.era
+    if (query.category) params.category = query.category
+    if (query.status != null) params.status = query.status
+
     const result = await listArtifacts(params)
     artifacts.value = result.list
     total.value = result.total
-  } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to load artifacts'
+  } catch (e) {
+    console.error(e)
+    errorMsg.value = '无法连接到博物馆档案库，请稍后再试'
   } finally {
     loading.value = false
   }
@@ -50,17 +97,39 @@ async function loadArtifacts() {
 
 function resetPage() {
   query.page = 1
+  syncToUrl()
   loadArtifacts()
 }
 
 function onPageChange(page: number) {
   query.page = page
+  syncToUrl()
   loadArtifacts()
   window.scrollTo({ top: 0, behavior: 'smooth' })
 }
 
 function goToArtifact(slug: string) {
   router.push(`/artifacts/${slug}`)
+}
+
+// --- filter handlers ---
+function onEraChange()      { resetPage() }
+function onCategoryChange() { resetPage() }
+function onStatusChange()   { resetPage() }
+
+// --- search debounce ---
+let searchTimer: ReturnType<typeof setTimeout>
+watch(() => query.q, () => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(resetPage, 400)
+})
+
+// --- era color ---
+const eraColorMap: Record<string, string> = {
+  '1990s': 'var(--era-1990s)',
+  '2000s': 'var(--era-2000s)',
+  '2010s': 'var(--era-2010s)',
+  '2020s': 'var(--era-2020s)',
 }
 
 function artifactEra(year: number | null): string {
@@ -71,26 +140,20 @@ function artifactEra(year: number | null): string {
   return '2020s'
 }
 
-const eraColorMap: Record<string, string> = {
-  '1990s': 'var(--era-1990s)',
-  '2000s': 'var(--era-2000s)',
-  '2010s': 'var(--era-2010s)',
-  '2020s': 'var(--era-2020s)',
-}
-
 function eraColor(era: string) {
   return eraColorMap[era] || 'var(--color-text-muted)'
 }
 
+// --- status label for display ---
+const statusLabel = computed(() => {
+  if (query.status === 1) return 'Active'
+  if (query.status === 2) return 'Ghost'
+  return null
+})
+
 onMounted(async () => {
   const [, cats] = await Promise.all([loadArtifacts(), listCategories()])
   categories.value = cats
-})
-
-let searchTimer: ReturnType<typeof setTimeout>
-watch(() => query.q, () => {
-  clearTimeout(searchTimer)
-  searchTimer = setTimeout(resetPage, 400)
 })
 </script>
 
@@ -118,8 +181,17 @@ watch(() => query.q, () => {
         />
 
         <div class="filter-group">
+          <span class="filter-label">状态 Status</span>
+          <el-radio-group v-model="query.status" @change="onStatusChange" size="small">
+            <el-radio-button :value="undefined">全部</el-radio-button>
+            <el-radio-button :value="1">活跃 Active</el-radio-button>
+            <el-radio-button :value="2">幽灵 Ghost</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div class="filter-group">
           <span class="filter-label">时代 Era</span>
-          <el-radio-group v-model="query.era" @change="resetPage" size="small">
+          <el-radio-group v-model="query.era" @change="onEraChange" size="small">
             <el-radio-button value="">全部</el-radio-button>
             <el-radio-button v-for="era in eras" :key="era.value" :value="era.value">
               {{ era.label }}
@@ -134,7 +206,7 @@ watch(() => query.q, () => {
             placeholder="全部分类"
             clearable
             size="small"
-            @change="resetPage"
+            @change="onCategoryChange"
           >
             <el-option
               v-for="cat in categories"
@@ -149,8 +221,8 @@ watch(() => query.q, () => {
 
     <!-- Artifact Grid -->
     <section class="artifacts-section wide-column">
-      <div v-if="error" class="state-box">
-        <el-alert :title="error" type="error" show-icon :closable="false" />
+      <div v-if="errorMsg" class="state-box">
+        <el-alert :title="errorMsg" type="error" show-icon :closable="false" />
       </div>
 
       <div v-else-if="loading && artifacts.length === 0" class="state-box">
@@ -205,8 +277,8 @@ watch(() => query.q, () => {
         </div>
 
         <div v-if="total === 0 && !loading" class="state-box">
-          <p>没有找到相关文物</p>
-          <p class="state-sub">No artifacts found</p>
+          <p>暂时没有找到相关互联网遗迹</p>
+          <p class="state-sub">No artifacts found matching your filters</p>
         </div>
 
         <div v-if="total > query.pageSize" class="pagination-bar">

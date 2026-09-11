@@ -89,6 +89,7 @@ export interface ArtifactQuery {
   pageSize?: number
   category?: string
   era?: string
+  /** 1 = active, 2 = ghost */
   status?: number
   q?: string
 }
